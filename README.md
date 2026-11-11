@@ -2,7 +2,7 @@
 
 An open-source agentic scribe. Lipi listens to a meeting and turns it into structured notes, in any domain, on your own infrastructure.
 
-> **Coming soon.** Code, setup docs and deployment guides are on the way.
+> **Coming soon.** Code, setup docs and deployment guides are on the way. Check out protocol at [Scribe Exchange Protocol](https://github.com/eka-care/scribeexchangeprotocol)
 
 ## Stack
 
