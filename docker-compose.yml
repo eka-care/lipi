@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: lipi
+      POSTGRES_PASSWORD: lipi
+      POSTGRES_DB: lipi
+    # 5434 on the host so other local Postgres servers on 5432/5433 do not clash
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./docker/initdb.sql:/docker-entrypoint-initdb.d/initdb.sql:ro
+      - lipi-postgres:/var/lib/postgresql/data
+
+volumes:
+  lipi-postgres:

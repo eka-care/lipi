@@ -1,0 +1,47 @@
+[project]
+name = "lipi"
+version = "0.1.0"
+description = "Reference implementation of the Scribe Exchange Protocol."
+license = "Apache-2.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.165",
+    "uvicorn[standard]>=0.32",
+    "asyncpg>=0.30",
+    "yoyo-migrations>=9.0",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.9",
+    "python-ulid>=3.0",
+    "orjson>=3.11",
+    "echo",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+    "jsonschema>=4.23",
+    "referencing>=0.35",
+    "ruff>=0.17",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+echo = { git = "https://github.com/eka-care/echo-sdk", branch = "main" }
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
+pythonpath = ["."]

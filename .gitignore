@@ -1,0 +1,12 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+data/
+.DS_Store
+server/.pytest_cache/
+server/.ruff_cache/
+server/.venv/
+
+# Local Claude settings
+.claude/settings.local.json

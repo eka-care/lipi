@@ -51,7 +51,7 @@ Four behaviours, adapted from Andrej Karpathy's observations on how LLMs go wron
 - **Names from the protocol.** Fields, statuses, error codes and warning codes are spelled exactly as in the spec. No synonyms, no internal names leaking into responses.
 - **No comments that say what the code says.** A comment explains *why*, cites the protocol section (`# protocol §6.8: gaps keep the source recording`), or is absent.
 - **Type hints on every function signature.**
-- **Async all the way.** No blocking calls in a route. `ffprobe` runs through `asyncio.create_subprocess_exec`.
+- **Async all the way.** No blocking calls in a route.
 - **Logging.** One structured log line per request (method, path, status, duration) and one per failure in `agents/` (source id, chunk index, error). Never log audio bytes, request bodies or secrets.
 - **Plain words in docs and messages.** Error `message` strings are a sentence a person can act on.
 
