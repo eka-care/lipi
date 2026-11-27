@@ -17,6 +17,30 @@ One phase per session. The session reads `CLAUDE.md`, then its phase here, then 
 
 ## Phase 1 — a recording lands and is transcribed
 
+> **Status (2026-11-27)**
+> - **Done:**
+>   - Step 1, the skeleton: config, db pool, `LipiError` and its handlers, ULIDs, `001_initial.sql`, app with request logging, discovery, compose, `env.example`, Makefile, conftest. Decisions 13–16.
+>   - Step 1 fixes:
+>     - echo from git.
+>     - Unknown route, wrong method and request-validation errors answer `400 invalid_request` in the §11 shape.
+>     - A 500 still writes the request log line.
+>     - `LIPI_LANGUAGES`.
+>     - orjson codec for jsonb.
+>     - ruff and `make lint`.
+>     - FastAPI ≥ 0.165.
+>     - `tests/helpers.py`.
+>     - `db.connect`.
+>
+>     Decisions 18–20.
+>   - `make lint` is clean and `make test` is green (7 tests). `make demo` prints discovery.
+> - **Deferred:**
+>   - Fake `agents.stt.transcribe` in conftest → Step 5, together with `agents/stt.py`.
+>   - echo provider extras → Step 5.
+>   - `demo.sh` covers discovery only and grows with each step.
+>   - No test yet for the request-validation mapping: no route takes a body before Step 2. Step 2's first body test covers it.
+>   - Decision 20 (optional duration) is to be revisited before Step 6.
+> - **Open:** none.
+
 **Goal:** with `curl` and a folder of short audio files: create a session, start a recording, upload numbered chunks, end it, read the transcript.
 
 **Reads:** `design.md`; protocol §4, §6, §7, §8, §11; skills `lipi-code-style`, `lipi-testing`.
@@ -36,6 +60,17 @@ One phase per session. The session reads `CLAUDE.md`, then its phase here, then 
 - `tests/conftest.py`: app client; test database truncated between tests; temporary storage root; `assert_matches(response, schema_name)`; fake `agents.stt.transcribe`.
 - Check: discovery validates against `04-discovery.schema.json`.
 
+**Step 1 fixes — before Step 2**
+- echo as a git or published dependency in `pyproject.toml`, so a fresh clone can `uv sync` (replaces decision 15's local path).
+- Errors in the protocol's shape everywhere: FastAPI's request-validation error → `400` with a §11 body (`invalid_request`, or the chapter's own code where a route has one); unknown route and wrong method → §11 body. Which code an unknown route carries: ask Neha before building.
+- A 500 still writes the per-request log line.
+- `LIPI_LANGUAGES` in config, `env.example` and discovery `languages.supported`.
+- orjson for the jsonb columns: an asyncpg type codec set when the pool opens (`orjson.dumps(...).decode()`, `orjson.loads`).
+- ruff in the dev dependencies, configured in `pyproject.toml`; `make lint`.
+- FastAPI minimum raised to the current release.
+- `tests/helpers.py` holds `assert_matches`; tests import it from there.
+- `core/db.py`: `open` renamed so it does not shadow the built-in.
+
 **Step 2 — Sessions**
 - `store/sessions.py`: `insert(txn_id, metadata)`, `get(id)`; returns a `Session` dataclass.
 - `api/sessions.py`: `POST /v1/sessions` (body `metadata?`, `txn_id?`; over 4 KB → `metadata_too_large`; `txn_id` already used → `invalid_request`); `GET /v1/sessions/{id}` (`session_not_found`); `to_session(row, sources)`.
@@ -47,11 +82,13 @@ One phase per session. The session reads `CLAUDE.md`, then its phase here, then 
 **Step 4 — Upload, bytes only**
 - `core/storage.py`: disk file store, atomic writes, keys as in `design.md` §5.
 - `store/chunks.py`: `upsert`, `get`, `list_for_source`, `set_text`, `set_failed`, `set_recorded_at`; returns a `Chunk` dataclass.
-- `api/chunks.py`: `PUT …/chunks/{n}` — state check (`source_not_recording`), `Content-Type` check (`format_mismatch`), empty body (`payload_required`), write bytes, ffprobe duration (`chunk_too_long`, bytes removed), row `queued`, source to `recording` with `recording_started_at` on the first chunk, respond with the chunk object. `PUT …/file` for `input: file` (`audio_too_long`). `GET …/transcript/chunks/{n}` (`chunk_not_found`). `to_chunk(row, offset_ms)`.
+- `api/chunks.py`: `PUT …/chunks/{n}` — state check (`source_not_recording`), `Content-Type` check (`format_mismatch`), empty body (`payload_required`), write bytes, row `queued`, source to `recording` with `recording_started_at` on the first chunk, respond with the chunk object. `PUT …/file` for `input: file`. `GET …/transcript/chunks/{n}` (`chunk_not_found`). `to_chunk(row, offset_ms)`.
 
 **Step 5 — Transcription**
 - `agents/stt.py`: `transcribe(audio, format, language_hints, model) -> (text, language, duration_ms)` through echo.
-- Wired into the upload: text → chunk `success`; exception → chunk `failed`, source warning `chunk_skipped`, one log line. The upload response carries the text.
+- Wired into the upload: text → chunk `success` with `text` and `duration_ms`; duration over `max_chunk_seconds`, or an exception → chunk `failed`, source warning `chunk_skipped`, one log line. The upload response carries the text.
+- `input: file`: duration over `max_seconds` → source `failed` with `audio_too_long`.
+- The fake `transcribe` in conftest returns a duration too.
 
 **Step 6 — End and transcript**
 - `POST …/end` (`chunks_total?`, `recorded_at?`): idempotent past `recording`; store `recorded_at`; `gaps` = indexes missing below `chunks_total` (or below the highest received); gaps → respond, stay `recording`; none → `processing`, join `success` chunk texts in index order, fill the transcript columns (language from the first chunk that reported one, duration = sum of chunk durations), `success`, `completed_at`.
