@@ -39,10 +39,24 @@ async def invalid(request: Request, exc: RequestValidationError) -> JSONResponse
     return JSONResponse(_body("invalid_request", message, None), status_code=400)
 
 
+# protocol §11.3: the code for each status the framework itself may raise
+_CODES = {
+    401: "authentication_failed",
+    403: "forbidden",
+    413: "payload_too_large",
+    429: "rate_limited",
+    503: "unavailable",
+}
+
+
 async def no_route(request: Request, exc: StarletteHTTPException) -> JSONResponse:
-    # decision 19: unknown route and wrong method are a malformed request (§11.3 pairs invalid_request with 400)
-    message = f"There is no {request.method} {request.url.path} endpoint."
-    return JSONResponse(_body("invalid_request", message, None), status_code=400)
+    if exc.status_code in (404, 405):
+        # decision 19: unknown route and wrong method are a malformed request (§11.3 pairs invalid_request with 400)
+        message = f"There is no {request.method} {request.url.path} endpoint."
+        return JSONResponse(_body("invalid_request", message, None), status_code=400)
+    fallback = "invalid_request" if exc.status_code < 500 else "internal_error"
+    code = _CODES.get(exc.status_code, fallback)
+    return JSONResponse(_body(code, str(exc.detail), None), status_code=exc.status_code, headers=exc.headers)
 
 
 async def internal(request: Request, exc: Exception) -> JSONResponse:

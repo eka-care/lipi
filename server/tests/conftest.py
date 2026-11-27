@@ -50,3 +50,9 @@ async def client(migrated: None) -> AsyncGenerator[httpx.AsyncClient]:
 @pytest.fixture(autouse=True)
 async def empty_tables(client: httpx.AsyncClient) -> None:
     await db.execute("TRUNCATE sessions, sources, chunks CASCADE")
+
+
+@pytest.fixture
+async def session(client: httpx.AsyncClient) -> dict:
+    response = await client.post("/v1/sessions", json={"metadata": {"visit_ref": "V-1"}})
+    return response.json()

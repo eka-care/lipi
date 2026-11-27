@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from lipi.api import discovery
+from lipi.api import discovery, sessions
 from lipi.core import config, db, errors
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -28,6 +28,7 @@ app.add_exception_handler(RequestValidationError, errors.invalid)
 app.add_exception_handler(StarletteHTTPException, errors.no_route)
 app.add_exception_handler(Exception, errors.internal)
 app.include_router(discovery.router)
+app.include_router(sessions.router)
 
 
 @app.middleware("http")

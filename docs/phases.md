@@ -17,7 +17,7 @@ One phase per session. The session reads `CLAUDE.md`, then its phase here, then 
 
 ## Phase 1 — a recording lands and is transcribed
 
-> **Status (2026-11-27)**
+> **Status (2026-11-27, after Step 2)**
 > - **Done:**
 >   - Step 1, the skeleton: config, db pool, `LipiError` and its handlers, ULIDs, `001_initial.sql`, app with request logging, discovery, compose, `env.example`, Makefile, conftest. Decisions 13–16.
 >   - Step 1 fixes:
@@ -32,12 +32,18 @@ One phase per session. The session reads `CLAUDE.md`, then its phase here, then 
 >     - `db.connect`.
 >
 >     Decisions 18–20.
->   - `make lint` is clean and `make test` is green (7 tests). `make demo` prints discovery.
+>   - Step 2, sessions:
+>     - `001_initial.sql` edited to match `design.md` §4, and local databases recreated.
+>     - `store/sessions.py` and `api/sessions.py`: `POST /v1/sessions` and `GET /v1/sessions/{id}`.
+>     - `client_session_id`, not unique.
+>     - `errors.no_route` turns only 404 and 405 into `invalid_request`; other HTTP errors keep their status.
+>
+>     Decision 25.
+>   - `make lint` is clean and `make test` is green (15 tests). `make demo` prints discovery, creates a session and reads it back.
 > - **Deferred:**
 >   - Fake `agents.stt.transcribe` in conftest → Step 5, together with `agents/stt.py`.
 >   - echo provider extras → Step 5.
->   - `demo.sh` covers discovery only and grows with each step.
->   - No test yet for the request-validation mapping: no route takes a body before Step 2. Step 2's first body test covers it.
+>   - `demo.sh` covers discovery and sessions; it grows with each step.
 >   - Decision 20 (optional duration) is to be revisited before Step 6.
 > - **Open:** none.
 
@@ -53,7 +59,7 @@ One phase per session. The session reads `CLAUDE.md`, then its phase here, then 
 - `core/db.py`: asyncpg pool opened at startup; `fetch`, `fetchrow`, `execute`.
 - `core/errors.py`: `LipiError(code, status, message, details=None)`; a handler that renders protocol §11 JSON.
 - `core/ids.py`: `new_id()` returns a ULID.
-- `migrations/001_initial.sql`: `sessions`, `sources`, `chunks` as in `design.md` §4; CHECKs on closed-list columns; cascade FKs; index `sources(session_id, created_at)`; partial unique index on `sessions.txn_id`.
+- `migrations/001_initial.sql`: `sessions`, `sources`, `chunks` as in `design.md` §4; CHECKs on closed-list columns; cascade FKs; index `sources(session_id, created_at)`; partial index on `sessions.client_session_id` (not unique, decision 25).
 - `main.py`: app, lifespan (pool open/close), routers, error handler, one log line per request.
 - `api/discovery.py`: `GET /.well-known/scribe-exchange` from config; `auth: null`; `audio` the only source kind; `models.stt` from `LIPI_STT_MODELS`; one placeholder structuring model.
 - `docker-compose.yml` (Postgres), `env.example`, `Makefile` (`dev`, `migrate`, `test`, `demo`).
@@ -72,8 +78,9 @@ One phase per session. The session reads `CLAUDE.md`, then its phase here, then 
 - `core/db.py`: `open` renamed so it does not shadow the built-in.
 
 **Step 2 — Sessions**
-- `store/sessions.py`: `insert(txn_id, metadata)`, `get(id)`; returns a `Session` dataclass.
-- `api/sessions.py`: `POST /v1/sessions` (body `metadata?`, `txn_id?`; over 4 KB → `metadata_too_large`; `txn_id` already used → `invalid_request`); `GET /v1/sessions/{id}` (`session_not_found`); `to_session(row, sources)`.
+- `migrations/001_initial.sql` edited to match `design.md` §4 (nothing is deployed, so no second migration): `sessions.txn_id` → `client_session_id` (≤ 50 characters) with a plain, non-unique index; `sessions.updated_at`; `sources.transcript_text` removed; `chunks.text` removed. Local databases are recreated.
+- `store/sessions.py`: `insert(client_session_id, metadata)`, `get(id)`; returns a `Session` dataclass.
+- `api/sessions.py`: `POST /v1/sessions` (body `metadata?`, `client_session_id?`; over 4 KB → `metadata_too_large`; `client_session_id` over 50 characters → `invalid_request`; not unique, decision 25); `GET /v1/sessions/{id}` (`session_not_found`); `to_session(row, sources)`.
 
 **Step 3 — Audio sources**
 - `store/sources.py`: `insert_audio`, `get`, `list_for_session`, `set_status`, `append_warning`, `set_transcript`; returns a `Source` dataclass.
@@ -81,24 +88,24 @@ One phase per session. The session reads `CLAUDE.md`, then its phase here, then 
 
 **Step 4 — Upload, bytes only**
 - `core/storage.py`: disk file store, atomic writes, keys as in `design.md` §5.
-- `store/chunks.py`: `upsert`, `get`, `list_for_source`, `set_text`, `set_failed`, `set_recorded_at`; returns a `Chunk` dataclass.
-- `api/chunks.py`: `PUT …/chunks/{n}` — state check (`source_not_recording`), `Content-Type` check (`format_mismatch`), empty body (`payload_required`), write bytes, row `queued`, source to `recording` with `recording_started_at` on the first chunk, respond with the chunk object. `PUT …/file` for `input: file`. `GET …/transcript/chunks/{n}` (`chunk_not_found`). `to_chunk(row, offset_ms)`.
+- `store/chunks.py`: `upsert`, `get`, `list_for_source`, `set_success`, `set_failed`, `set_recorded_at`; returns a `Chunk` dataclass.
+- `api/chunks.py`: `PUT …/chunks/{n}` — state check (`source_not_recording`), `Content-Type` check (`format_mismatch`), empty body (`payload_required`), write bytes, row `queued`, source to `recording` with `recording_started_at` on the first chunk, respond with the chunk object. `PUT …/file` for `input: file`: bytes to `file.audio`, source to `recording`; no chunk row. `GET …/transcript/chunks/{n}` (`chunk_not_found`). `to_chunk(row, offset_ms)`.
 
 **Step 5 — Transcription**
 - `agents/stt.py`: `transcribe(audio, format, language_hints, model) -> (text, language, duration_ms)` through echo.
-- Wired into the upload: text → chunk `success` with `text` and `duration_ms`; duration over `max_chunk_seconds`, or an exception → chunk `failed`, source warning `chunk_skipped`, one log line. The upload response carries the text.
-- `input: file`: duration over `max_seconds` → source `failed` with `audio_too_long`.
+- Wired into the upload: text → written to `chunks/{n}.txt`, chunk `success` with `duration_ms`; duration over `max_chunk_seconds`, or an exception → chunk `failed`, source warning `chunk_skipped`, one log line. The upload response carries the text.
+- `input: file` is its own flow: at `end` the whole file is transcribed in one call and the text written to `transcript.txt`; duration over `max_seconds` → source `failed` with `audio_too_long`.
 - The fake `transcribe` in conftest returns a duration too.
 
 **Step 6 — End and transcript**
-- `POST …/end` (`chunks_total?`, `recorded_at?`): idempotent past `recording`; store `recorded_at`; `gaps` = indexes missing below `chunks_total` (or below the highest received); gaps → respond, stay `recording`; none → `processing`, join `success` chunk texts in index order, fill the transcript columns (language from the first chunk that reported one, duration = sum of chunk durations), `success`, `completed_at`.
+- `POST …/end` (`chunks_total?`, `recorded_at?`): idempotent past `recording`; store `recorded_at`; `gaps` = indexes missing below `chunks_total` (or below the highest received); gaps → respond, stay `recording`; none → `processing`, read the `success` chunk text files in parallel, join in index order, write `transcript.txt`, fill the transcript columns (language `null` for chunked recordings for now; duration = sum of chunk durations, `null` if any is unknown), `success`, `completed_at`.
 - `api/transcripts.py`: `GET …/transcript` from the source row; `invalid_state` before `success`.
 
 **Step 7 — Demo**
 - `tests/audio/`: three short real files (webm/opus, wav, ogg) and one unreadable.
 - `scripts/demo.sh`: discovery → session → source → three chunks out of order → `end` with a gap → the missing chunk → `end` → transcript printed.
 
-**Tests:** `test_discovery.py` (§4), `test_sessions.py` (§6.2–6.3, `txn_id`), `test_sources.py` (§6.4–6.8), `test_audio.py` (§7), `test_transcripts.py` (§8). Every "done when" line below has a named test.
+**Tests:** `test_discovery.py` (§4), `test_sessions.py` (§6.2–6.3, `client_session_id`), `test_sources.py` (§6.4–6.8), `test_audio.py` (§7), `test_transcripts.py` (§8). Every "done when" line below has a named test.
 
 ### Decide during the phase (add to `design.md` §8)
 

@@ -8,9 +8,7 @@ router = APIRouter()
 TEMPLATES = {"max_instruction_chars": 20000, "max_per_caller": 50}
 DOCUMENTS = {"max_content_bytes": 1048576}
 OUTPUT_FORMATS = ["markdown"]
-STRUCTURING_MODELS = [
-    {"id": "none", "display_name": "No structuring model yet", "default": True}
-]
+STRUCTURING_MODELS = [{"id": "none", "display_name": "No structuring model yet", "default": True}]
 
 
 def to_discovery(config: Config) -> dict:
